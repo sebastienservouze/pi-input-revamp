@@ -16,7 +16,6 @@
   },
   "files": [
     "extensions",
-    "preview.gif",
     "README.md"
   ],
   "scripts": {
