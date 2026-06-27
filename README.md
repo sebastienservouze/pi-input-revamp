@@ -10,6 +10,8 @@ border.
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
+![pi-input-revamp preview](./preview.gif)
+
 The border and the π use the active theme's `accent` color. The top bar shows
 the agent, model, thinking level, working directory, session duration, tool
 count and a live token estimate; the right side shows the session label, context
