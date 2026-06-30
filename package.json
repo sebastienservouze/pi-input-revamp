@@ -1,6 +1,6 @@
 {
   "name": "@nerisma/pi-input-revamp",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Revamped input editor for pi: full rounded frame, colored π prompt, and live session metrics bar.",
   "keywords": [
     "pi-package",
@@ -16,7 +16,8 @@
   },
   "files": [
     "extensions",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit"
