@@ -35,7 +35,8 @@ type ElementId =
   | "duration" | "tools" | "tok"
   | "session-label"
   | "ctx-percent" | "ctx-tokens" | "ctx-tokens-max" | "ctx-tokens-full"
-  | "cost" | "out" | "hit" | "miss"
+  | "session-cost" | "session-out" | "session-hit" | "session-miss"
+  | "turn-cost" | "turn-out" | "turn-hit" | "turn-miss"
   | "turn" | "turn-duration";
 
 interface InputRevampConfig {
@@ -56,9 +57,9 @@ interface InputRevampConfig {
 const DEFAULT_CONFIG: InputRevampConfig = {
   layout: {
     topLeft: ["agent", "model", "thinking-level", "cwd", "duration", "tools", "tok"],
-    topRight: ["session-label", "ctx-percent", "ctx-tokens-full", "cost", "out", "hit", "miss"],
+    topRight: ["session-label", "ctx-percent", "ctx-tokens-full", "session-cost", "session-out", "session-hit", "session-miss"],
     bottomLeft: [],
-    bottomRight: ["turn", "turn-duration", "cost", "out", "hit", "miss"],
+    bottomRight: ["turn", "turn-duration", "turn-cost", "turn-out", "turn-hit", "turn-miss"],
   },
   animations: {
     typingPulse: true,
@@ -529,7 +530,6 @@ interface ElementRenderEnv {
   contextUsage: { percent: number | null; tokens: number | null; contextWindow: number | null };
   lastCompletedTurn: { turnNum: number; cost: number; output: number; cacheRead: number; input: number; duration: string } | null;
   metricUpdateCount: number;
-  metricsScope: "session" | "turn";
 }
 
 /**
@@ -573,13 +573,12 @@ class NerismaInputEditor extends CustomEditor {
   private _lastTokValue: number = -1;
   /** Metrics update counter (shown in parentheses after T). */
   private _metricUpdateCount: number = 0;
-  /** Previous serialized values per `scope:id` key — used to detect changes for per-element pulse.
-   *  Keyed by scope (not bare ElementId): the same element (e.g. `cost`) appears in both a
-   *  session-scope and a turn-scope quadrant with different values, so a bare id would collide
-   *  and flip every frame. */
-  private _prevElementValues = new Map<string, string>();
-  /** `scope:id` keys currently mid-pulse (decay not finished yet). */
-  private _pulsingElements = new Set<string>();
+  /** Previous serialized value per element ID — used to detect changes for per-element pulse.
+   *  Each ElementId carries its own metric (e.g. session-cost vs turn-cost are distinct ids),
+   *  so the same value is produced wherever the id is placed and keying by id can't collide. */
+  private _prevElementValues = new Map<ElementId, string>();
+  /** Element IDs currently mid-pulse (decay not finished yet). */
+  private _pulsingElements = new Set<ElementId>();
   /** Cache of the last completed turn (shown while the current turn has no reply yet). */
   private _lastCompletedTurn: {
     turnNum: number;
@@ -673,7 +672,7 @@ class NerismaInputEditor extends CustomEditor {
   ): { text: string; ansi: string; skipPulse?: boolean } | null {
     const { accentAnsi, warningAnsi, successAnsi, errorAnsi, syntaxNumberAnsi, syntaxCommentAnsi,
       dimAnsi, thm, ctx, pi, metrics, sessionElapsed, toolCount, tokEstimate,
-      turnInfo, contextUsage, lastCompletedTurn, metricUpdateCount, metricsScope } = env;
+      turnInfo, contextUsage, lastCompletedTurn, metricUpdateCount } = env;
 
     switch (id) {
       case "agent": {
@@ -735,23 +734,43 @@ class NerismaInputEditor extends CustomEditor {
         if (contextUsage.tokens === null || contextUsage.contextWindow === null) return null;
         return { text: `${formatTokens(contextUsage.tokens)}/${formatTokens(contextUsage.contextWindow)}`, ansi: dimAnsi };
       }
-      case "cost": {
-        const c = metricsScope === "session" ? (metrics?.cost ?? 0) : (lastCompletedTurn?.cost ?? 0);
+      case "session-cost": {
+        const c = metrics?.cost ?? 0;
         if (c <= 0) return null;
         return { text: `${c.toFixed(3)}$`, ansi: warningAnsi };
       }
-      case "out": {
-        const o = metricsScope === "session" ? (metrics?.output ?? 0) : (lastCompletedTurn?.output ?? 0);
+      case "session-out": {
+        const o = metrics?.output ?? 0;
         if (o <= 0) return null;
         return { text: `OUT ${formatTokens(o)}`, ansi: syntaxNumberAnsi };
       }
-      case "hit": {
-        const h = metricsScope === "session" ? (metrics?.cacheRead ?? 0) : (lastCompletedTurn?.cacheRead ?? 0);
+      case "session-hit": {
+        const h = metrics?.cacheRead ?? 0;
         if (h <= 0) return null;
         return { text: `HIT ${formatTokens(h)}`, ansi: successAnsi };
       }
-      case "miss": {
-        const m = metricsScope === "session" ? (metrics?.input ?? 0) : (lastCompletedTurn?.input ?? 0);
+      case "session-miss": {
+        const m = metrics?.input ?? 0;
+        if (m <= 0) return null;
+        return { text: `MISS ${formatTokens(m)}`, ansi: errorAnsi };
+      }
+      case "turn-cost": {
+        const c = lastCompletedTurn?.cost ?? 0;
+        if (c <= 0) return null;
+        return { text: `${c.toFixed(3)}$`, ansi: warningAnsi };
+      }
+      case "turn-out": {
+        const o = lastCompletedTurn?.output ?? 0;
+        if (o <= 0) return null;
+        return { text: `OUT ${formatTokens(o)}`, ansi: syntaxNumberAnsi };
+      }
+      case "turn-hit": {
+        const h = lastCompletedTurn?.cacheRead ?? 0;
+        if (h <= 0) return null;
+        return { text: `HIT ${formatTokens(h)}`, ansi: successAnsi };
+      }
+      case "turn-miss": {
+        const m = lastCompletedTurn?.input ?? 0;
         if (m <= 0) return null;
         return { text: `MISS ${formatTokens(m)}`, ansi: errorAnsi };
       }
@@ -788,19 +807,17 @@ class NerismaInputEditor extends CustomEditor {
         // Element manages its own pulse (e.g. tok uses _tokPulse)
         parts.push(result.text);
       } else {
-        // Qualify by scope so the same id in session/turn quadrants doesn't collide.
-        const pulseKey = `${env.metricsScope}:${id}`;
         const key = `${result.ansi}|${result.text}`;
-        const prev = this._prevElementValues.get(pulseKey);
+        const prev = this._prevElementValues.get(id);
         const changed = prev !== key;
-        this._prevElementValues.set(pulseKey, key);
+        this._prevElementValues.set(id, key);
         if (changed) {
-          this._pulsingElements.add(pulseKey);
+          this._pulsingElements.add(id);
         }
-        if (this._pulsingElements.has(pulseKey)) {
+        if (this._pulsingElements.has(id)) {
           parts.push(pulsedTextFn(result.ansi, result.text));
           if (this._metricPulse < 0.01) {
-            this._pulsingElements.delete(pulseKey);
+            this._pulsingElements.delete(id);
           }
         } else {
           parts.push(`${result.ansi}${result.text}\x1b[39m`);
@@ -1058,7 +1075,6 @@ class NerismaInputEditor extends CustomEditor {
       ctx, pi, metrics, sessionElapsed, toolCount, tokEstimate,
       turnInfo, contextUsage, lastCompletedTurn: this._lastCompletedTurn,
       metricUpdateCount: this._metricUpdateCount,
-      metricsScope: "session",
     };
 
     // Top border
@@ -1134,9 +1150,10 @@ class NerismaInputEditor extends CustomEditor {
     }
 
     // ── Bottom quadrants ────────────────────────────────
-    const bottomEnv: ElementRenderEnv = { ...env, metricsScope: "turn" };
-    const bottomLeftText = this._buildQuadrant(layout.bottomLeft, bottomEnv, pulsedTextFinal, sep);
-    const bottomRightText = this._buildQuadrant(layout.bottomRight, bottomEnv, pulsedTextFinal, sep);
+    // Same env as the top: each metric element (session-* / turn-*) carries its
+    // own scope, so the quadrant it lands in no longer changes what it reports.
+    const bottomLeftText = this._buildQuadrant(layout.bottomLeft, env, pulsedTextFinal, sep);
+    const bottomRightText = this._buildQuadrant(layout.bottomRight, env, pulsedTextFinal, sep);
 
     const bottomLeftStr = bottomLeftText.length > 0 ? ` ${bottomLeftText} ` : "";
     const bottomRightStr = bottomRightText.length > 0 ? ` ${bottomRightText} ` : "";

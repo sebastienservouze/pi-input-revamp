@@ -42,9 +42,9 @@ fall back to the defaults, and changes are picked up on the next pi restart.
 {
   "layout": {
     "topLeft": ["agent", "model", "thinking-level", "cwd", "duration", "tools", "tok"],
-    "topRight": ["session-label", "ctx-percent", "ctx-tokens-full", "cost", "out", "hit", "miss"],
+    "topRight": ["session-label", "ctx-percent", "ctx-tokens-full", "session-cost", "session-out", "session-hit", "session-miss"],
     "bottomLeft": [],
-    "bottomRight": ["turn", "turn-duration", "cost", "out", "hit", "miss"]
+    "bottomRight": ["turn", "turn-duration", "turn-cost", "turn-out", "turn-hit", "turn-miss"]
   },
   "animations": {
     "typingPulse": true,
@@ -76,17 +76,20 @@ quadrants simply collapse into the border.
 | `ctx-tokens`       | Context tokens in use (`15.2K`)                                    |
 | `ctx-tokens-max`   | Context window size (`200K`)                                       |
 | `ctx-tokens-full`  | Used / max (`15.2K/200K`)                                          |
-| `cost`             | Cost in `$`                                                        |
-| `out`              | Output tokens (`OUT 8.3K`)                                         |
-| `hit`              | Cache-read tokens (`HIT 2.1K`)                                     |
-| `miss`             | Input / cache-miss tokens (`MISS 1.2K`)                            |
+| `session-cost`     | Whole-session cost in `$`                                          |
+| `session-out`      | Whole-session output tokens (`OUT 8.3K`)                           |
+| `session-hit`      | Whole-session cache-read tokens (`HIT 2.1K`)                       |
+| `session-miss`     | Whole-session input / cache-miss tokens (`MISS 1.2K`)             |
+| `turn-cost`        | Last completed turn cost in `$`                                    |
+| `turn-out`         | Last completed turn output tokens (`OUT 8.3K`)                     |
+| `turn-hit`         | Last completed turn cache-read tokens (`HIT 2.1K`)                 |
+| `turn-miss`        | Last completed turn input / cache-miss tokens (`MISS 1.2K`)        |
 | `turn`             | Turn number with metric-update count (`T5 (3)`)                   |
 | `turn-duration`    | Duration of the last completed turn (`12s`)                       |
 
-**Scope.** `cost`, `out`, `hit` and `miss` are scope-aware: in the **top**
-quadrants they report the whole-session totals, while in the **bottom** quadrants
-they report the **last completed turn** only. This lets you keep a running
-session total up top and a per-turn breakdown below.
+Every element is self-contained: the `session-*` variants always report
+whole-session totals and the `turn-*` variants always report the last completed
+turn, regardless of which quadrant you place them in.
 
 ### Animations
 
